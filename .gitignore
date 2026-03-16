@@ -1,0 +1,16 @@
+# Nextflow
+work/
+.nextflow*
+.nextflow.log*
+
+# Execution outputs
+results/
+out/
+
+# Environment
+.env
+.conda/
+.mamba/
+
+# System
+.DS_Store
