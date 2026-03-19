@@ -4,7 +4,17 @@ nextflow.enable.dsl=2
 params.peak_depth = 50 
 params.bam = null 
 params.gtf = null
+params.homopol = null
 params.outdir = "results"
+params.refgenome = null
+
+// We need homopolymers or the reference FA to find them:
+if( !params.homopol && !params.refgenome ) { 
+    error "Please provide either --homopol or --refgenome (to find homopolymers)"
+} else if (params.refgenome) {
+    // If the reference genome is provided, we can find homopolymers from it
+    params.homopol = "${params.outdir}/homopolymers.bed"
+} // expected path, to be created 
 
 // Validation
 if( !params.bam || !params.gtf ) { error "Please provide --bam and --gtf" }
@@ -79,8 +89,15 @@ shell:
     # BED6 target:    1:Chrom, 2:Start, 3:End, 4:Name, 5:Score, 6:Strand
     
     # We also subtract 1 from the Start ($3) because BED is 0-based
-    awk 'BEGIN{OFS="\t"} {print $1, $3-1, $4, "pas_" $5 "_" NR, $5, $2}' pas.tsv > pas.bed
-    awk 'BEGIN{OFS="\t"} {print $1, $3-1, $4, "tss_" $5 "_" NR, $5, $2}' tss.tsv > tss.bed
+    awk -F'\t' 'BEGIN{OFS="\t"} {
+        start=$3-1
+        print $1, start, $4, "pas_" $6 "_" $1 ":" start, $6, $2
+    }' pas.tsv > pas.bed
+
+    awk -F'\t' 'BEGIN{OFS="\t"} {
+        start=$3-1
+        print $1, start, $4, "tss_" $6 "_" $1 ":" start, $6, $2
+    }' tss.tsv > tss.bed
 
     # 4. Concatenate the properly formatted BED files
     cat pas.bed tss.bed > paraclu.d!{params.peak_depth}.peaks.bed
@@ -100,6 +117,7 @@ process peak_connections {
     output:
     path "${bam_id}_peak_pairwise_connections.tsv", emit: connections
     path "${bam_id}_peak_annotation.tsv",           emit: annotations
+    path "${bam_id}_peak_intervals.gtf",            emit: gtf
 
     script:
     // Using the bash variable ${bam_id} for the prefix argument
@@ -108,6 +126,7 @@ process peak_connections {
         ${peaks_bed} \
         ${gtf_file} \
         ${bam} \
-        ${bam_id}_
+        ${bam_id}_ \
+        ${params.homopol}
     """
 }

@@ -1,6 +1,6 @@
-#!/users/mirimia/jchamberlin/miniforge3/bin/python
+#!/usr/bin/env python
 
-import pysam as ps
+import pysam
 import pandas as pd
 import pyranges as pr
 import numpy as np
@@ -14,10 +14,14 @@ from Bio.Seq import Seq
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-bedpath=sys.argv[1]
-genepath=sys.argv[2]
-bampath=sys.argv[3]
-outpath=sys.argv[4]
+from cadena.utils import make_peaks_gtf
+from cadena.utils import annotate_peaks
+
+bedpath=sys.argv[1] # TSS and PAS peaks bed
+genepath=sys.argv[2] # original gene annotation
+bampath=sys.argv[3] # BAM file of long reads
+prefix=sys.argv[4] # output path prefix
+homopol=sys.argv[5] # homopolymer annotation file path
 
 def get_softclip_lengths(read):
     if not read.cigartuples:
@@ -26,7 +30,15 @@ def get_softclip_lengths(read):
     right_len = read.cigartuples[-1][1] if read.cigartuples[-1][0] == 4 else 0
     return left_len, right_len
 
+
 def get_align_and_softclip(read): # get the 8bp at softclip:read boundary at the "TSS"
+    '''
+    For analyzing the 5' cap signature, we want to look at the softclip:aligned boundary 
+    sequence at the TSS end of the read. If it contains 4G, evidence of 5p cap
+    If only 3G, lack of 5p cap. Other sequence, other weirdness.
+    Assumes reads align opposite to gene strand.
+    '''
+
     readseq = read.query_sequence
     if read.is_reverse:
         # we want the left clip and the first four bp of the readseq
@@ -50,13 +62,15 @@ def count_motif(boundary_seq): # analyze the 5p cap signature
 
 # import the peaks and genes, assign bam file
 peaks = pr.read_bed(bedpath)
-genes = pr.read_gtf(genepath)
-bam = ps.AlignmentFile(bampath, "rb" )
-
 # keep genes only
+genes = pr.read_gtf(genepath)
 genes = genes[genes.Feature == "gene"].copy()
 
+
+bam = pysam.AlignmentFile(bampath, "rb" )
+
 # filter out the antisense artifact peaks
+# i.e. remove peaks with antisense partner >100x stronger
 peaks = peaks[~peaks.Name.isin(peaks.join(peaks, strandedness="opposite",suffix="_AS").
                                df.query("Score_AS >= 100 * Score").Name)]
 
@@ -164,10 +178,7 @@ df = pd.DataFrame({
 df["tss_peak_name"] = df["row_idx"].map(lambda i: tss_peaks.Name[i])
 df["pas_peak_name"] = df["col_idx"].map(lambda i: pas_peaks.Name[i])
 
-
 #####
-
-
 medians = {k: median([val for val, cnt in v.items() for _ in range(cnt)])
            for k, v in contact_length_counts.items()}
 df["median_aln_length"] = medians.values()
@@ -180,11 +191,10 @@ df["pas_read_count_fromname"] = df["pas_peak_name"].str.split("_").str[1].astype
 df["tss_read_count"] = df["row_idx"].map(tss_counts)
 df["pas_read_count"] = df["col_idx"].map(pas_counts)
 
-
-df.to_csv(outpath+"peak_pairwise_connections.tsv", index=False, sep="\t", header=True)
+# df is now pairwise connections counts, plus align length info, etc
+df.to_csv(prefix+"peak_pairwise_connections.tsv", index=False, sep="\t", header=True)
 print(f"Total reads checked: {n}")
 print(f"Total reads in peaks matrix: {contact_matrix.sum()}")
-
 
 # tss 5p cap dataframe:
 
@@ -221,9 +231,12 @@ for i, dist in enumerate(pas_softclip_dists):
         counts = np.array(list(dist.values()))
         pas_medians[pas_peaks.Name[i]] = weighted_median(lengths, counts)
 
-pas_clip_df = pd.DataFrame(list(pas_medians.items()), columns=['peak_name','median_clip']).sort_values("median_clip")
+pas_clip_df = pd.DataFrame(list(pas_medians.items()), 
+    columns=['peak_name','median_clip']).sort_values("median_clip")
 pas_clip_df["peak_type"]="pas"
-tss_clip_df = pd.DataFrame(list(tss_medians.items()), columns=['peak_name','median_clip']).sort_values("median_clip")
+
+tss_clip_df = pd.DataFrame(list(tss_medians.items()),
+    columns=['peak_name','median_clip']).sort_values("median_clip")
 tss_clip_df["peak_type"]="tss"
 
 # combine the median soft clip length data into one df
@@ -232,5 +245,24 @@ clip_df = pd.concat([tss_clip_df,pas_clip_df],axis=0,ignore_index=True)
 # combine soft clip df wtih the 5p cap signature df, pas peaks will be NaN
 annot_df = clip_df.merge(df_motifs,on="peak_name",how="left")
 
-annot_df.to_csv(outpath+"peak_annotation.tsv", index=False, sep="\t", header=True)
-print(f"Output written to {outpath}peak_annotation.tsv")
+annot_df.to_csv(prefix+"peak_annotation.tsv", index=False, sep="\t", header=True)
+print(f"Output written to {prefix}peak_annotation.tsv")
+
+
+## annotate_peaks(peakpath,peakconnectionspath,peakannotationpath,
+##gtfpath,homopolymerpath,libtype="ont",min_reads=50):
+
+
+peaks_with_genes = annotate_peaks(bedpath, 
+    f"{prefix}peak_pairwise_connections.tsv",
+    f"{prefix}peak_annotation.tsv",
+    genepath,
+    homopol)
+
+# create the intervals GTF
+
+make_peaks_gtf(
+    peaks_with_genes,
+    f"{prefix}peak_pairwise_connections.tsv",
+    f"{prefix}peak_intervals.gtf"
+)
