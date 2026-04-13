@@ -182,7 +182,7 @@ def plot_connections(bampath,gtfpath,peakspath,celltype,geneid=None,coords=None)
 # tsv path,
 # min reads to keep a connection, # max ratio between tss and pas reads to keep a connection
 
-def read_connections(tsv_path, min_reads = 500, max_ratio = 100):
+def read_connections(tsv_path, min_reads = 50, max_ratio = 100):
     """
     Read peak to peak read count data produced by my custom pipeline
     
@@ -191,20 +191,26 @@ def read_connections(tsv_path, min_reads = 500, max_ratio = 100):
     df["total_reads"] = df["tss_read_count"] + df["pas_read_count"] - df["count"]
     df["span_frac"] = df["count"] / df["total_reads"]
     dff = df[df["count"] > min_reads].copy()
-    dff["length_bin"] = pd.qcut(dff["median_aln_length"], q=10)
-    dfff = dff[(dff["tss_read_count"] / dff["pas_read_count"] < max_ratio) & (dff["pas_read_count"] / dff["tss_read_count"] < max_ratio)]
+    #dff["length_bin"] = pd.qcut(dff["median_aln_length"], q=10)
+    dfff = dff[(dff["tss_read_count"] / dff["pas_read_count"] < max_ratio) & (dff["pas_read_count"] / dff["tss_read_count"] < max_ratio)].copy()
+    dfff["length_bin"] = pd.qcut(dfff["median_aln_length"], q=10)
+
     return(dfff)
 
-def annotate_peaks(peakpath,peakconnectionspath,peakannotationpath,gtfpath,homopolymerpath,libtype="ont",min_reads=50):
+
+def annotate_peaks(peaks,
+    peak_links,
+    peak_annotation,
+    gtfpath,
+    homopolymerpath,libtype="ont",min_reads=50):
     """
     Annotate the peak to peak read count data with homopolymer presence (A7),
     soft clipping stats (5' and 3'), and estimate peak validity (as TSS or PAS vs artifact)
     """
     homopol = pr.read_bed(homopolymerpath)
-    peaks = pr.read_bed(peakpath)
     peaks = peaks.count_overlaps(homopol,strandedness="same")
-    links = read_connections(peakconnectionspath,min_reads = min_reads)
-    peakann = pd.read_csv(peakannotationpath,sep="\t")
+    links = peak_links.copy()
+    peakann = peak_annotation.copy()
     
     gtf = pr.read_gtf(gtfpath)
     genes = gtf[gtf.Feature == "gene"].copy()
@@ -345,3 +351,74 @@ def make_peaks_gtf(peak_ann, links_path, outpath):
     # Keep only the 9 standard columns
     gtf = df[core_cols + ['attribute']]
     gtf.to_csv(outpath, sep='\t', header=False, index=False, quoting=3)
+
+
+
+### drafts
+
+def annotate_peaks_ori(peakpath,peakconnectionspath,peakannotationpath,gtfpath,homopolymerpath,libtype="ont",min_reads=50):
+    """
+    Annotate the peak to peak read count data with homopolymer presence (A7),
+    soft clipping stats (5' and 3'), and estimate peak validity (as TSS or PAS vs artifact)
+    """
+    homopol = pr.read_bed(homopolymerpath)
+    peaks = pr.read_bed(peakpath)
+    peaks = peaks.count_overlaps(homopol,strandedness="same")
+    links = read_connections(peakconnectionspath,min_reads = min_reads)
+    peakann = pd.read_csv(peakannotationpath,sep="\t")
+    
+    gtf = pr.read_gtf(gtfpath)
+    genes = gtf[gtf.Feature == "gene"].copy()
+    exons = gtf[gtf.Feature == "exon"].copy()
+    
+    peaks_to_exons = peaks.nearest(exons, strandedness="same")
+    peaks_to_exons = peaks_to_exons[peaks_to_exons.Distance == 0]
+    peaks_to_genes = peaks[~peaks.Name.isin(peaks_to_exons.Name)].nearest(genes,strandedness="same")
+    peaks_to_genes = peaks_to_genes[peaks_to_genes.Distance == 0]
+    
+    peaks_to_features = pr.concat([peaks_to_exons,peaks_to_genes])
+    peaks_to_intergenic = peaks[~peaks.Name.isin(peaks_to_features.Name)].df
+    peaks_to_intergenic["Feature"] = "intergenic"
+    peaks_to_intergenic["gene_id"] = None
+    
+    peaksGenes = pd.concat([peaks_to_features[["Chromosome","Start","End","Name","Score","Strand","Feature","gene_id","NumberOverlaps"]].df,peaks_to_intergenic])
+    
+    peakann = peakann.merge(peaksGenes,left_on="peak_name",right_on="Name").drop(["Name","total"],axis=1).copy()
+
+    # filtering changes depending on the data type
+    if(libtype == "ont"):
+        tss_minclip = 12
+        tss_maxclip = 45
+        pas_minclip = 15
+        pas_maxclip = 30
+    elif(libtype == "argentag"):
+        tss_minclip = 12
+        tss_maxclip = 45
+        pas_minclip = 105
+        pas_maxclip = 120
+    else:
+        tss_minclip = 12
+        tss_maxclip = 45
+        pas_minclip = 23
+        pas_maxclip = 37
+    
+    peakann["valid"] = np.where(
+    (
+        (peakann.peak_type == "tss")
+        & (peakann.median_clip > tss_minclip)
+        & (peakann.median_clip < tss_maxclip)
+        & (peakann.frac_GGGG > 0.5)
+        & (peakann.Score > min_reads)
+    )
+    | (
+        (peakann.peak_type == "pas")
+        & (peakann.median_clip > pas_minclip)
+        & (peakann.median_clip < pas_maxclip)
+        & (peakann.Score > min_reads)
+        & (peakann.NumberOverlaps == 0)
+    ),
+    True,
+    False
+    )
+    peakann["width"] = peakann["End"]-peakann["Start"]
+    return(peakann)

@@ -18,3 +18,5 @@ out/
 # Misc
 *.ipynb
 .ipynb_checkpoints*
+*draft*
+packages/cadena/__pycache__/

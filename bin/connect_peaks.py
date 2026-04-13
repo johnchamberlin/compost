@@ -61,7 +61,7 @@ def count_motif(boundary_seq): # analyze the 5p cap signature
         return 'other'
 
 # import the peaks and genes, assign bam file
-peaks = pr.read_bed(bedpath)
+peaks_pr = pr.read_bed(bedpath)
 # keep genes only
 genes = pr.read_gtf(genepath)
 genes = genes[genes.Feature == "gene"].copy()
@@ -71,10 +71,10 @@ bam = pysam.AlignmentFile(bampath, "rb" )
 
 # filter out the antisense artifact peaks
 # i.e. remove peaks with antisense partner >100x stronger
-peaks = peaks[~peaks.Name.isin(peaks.join(peaks, strandedness="opposite",suffix="_AS").
+peaks = peaks_pr[~peaks_pr.Name.isin(peaks_pr.join(peaks_pr, strandedness="opposite",suffix="_AS").
                                df.query("Score_AS >= 100 * Score").Name)]
 
-peaks = peaks.df
+peaks = peaks_pr.df
 
 # split tss and pas peaks, reset index so index = row number
 tss_peaks = peaks[peaks.Name.str.contains("tss")].reset_index(drop=True)
@@ -168,31 +168,31 @@ for read in bam.fetch():
 rows, cols = zip(*contact_matrix.keys())
 values = list(contact_matrix.values())
 
-df = pd.DataFrame({
+links_df = pd.DataFrame({
     "row_idx": rows,
     "col_idx": cols,
     "count": values,
 })
 
 # Add row and column names by mapping indices
-df["tss_peak_name"] = df["row_idx"].map(lambda i: tss_peaks.Name[i])
-df["pas_peak_name"] = df["col_idx"].map(lambda i: pas_peaks.Name[i])
+links_df["tss_peak_name"] = links_df["row_idx"].map(lambda i: tss_peaks.Name[i])
+links_df["pas_peak_name"] = links_df["col_idx"].map(lambda i: pas_peaks.Name[i])
 
 #####
 medians = {k: median([val for val, cnt in v.items() for _ in range(cnt)])
            for k, v in contact_length_counts.items()}
-df["median_aln_length"] = medians.values()
-df["idx_check"] = medians.keys()
+links_df["median_aln_length"] = medians.values()
+links_df["idx_check"] = medians.keys()
 
-df["tss_read_count_fromname"] = df["tss_peak_name"].str.split("_").str[1].astype(int)
-df["pas_read_count_fromname"] = df["pas_peak_name"].str.split("_").str[1].astype(int)
+links_df["tss_read_count_fromname"] = links_df["tss_peak_name"].str.split("_").str[1].astype(int)
+links_df["pas_read_count_fromname"] = links_df["pas_peak_name"].str.split("_").str[1].astype(int)
 
 # Map read counts
-df["tss_read_count"] = df["row_idx"].map(tss_counts)
-df["pas_read_count"] = df["col_idx"].map(pas_counts)
+links_df["tss_read_count"] = links_df["row_idx"].map(tss_counts)
+links_df["pas_read_count"] = links_df["col_idx"].map(pas_counts)
 
-# df is now pairwise connections counts, plus align length info, etc
-df.to_csv(prefix+"peak_pairwise_connections.tsv", index=False, sep="\t", header=True)
+# links_df is now pairwise connections counts, plus align length info, etc
+links_df.to_csv(prefix+"peak_pairwise_connections.tsv", index=False, sep="\t", header=True)
 print(f"Total reads checked: {n}")
 print(f"Total reads in peaks matrix: {contact_matrix.sum()}")
 
@@ -245,19 +245,21 @@ clip_df = pd.concat([tss_clip_df,pas_clip_df],axis=0,ignore_index=True)
 # combine soft clip df wtih the 5p cap signature df, pas peaks will be NaN
 annot_df = clip_df.merge(df_motifs,on="peak_name",how="left")
 
-annot_df.to_csv(prefix+"peak_annotation.tsv", index=False, sep="\t", header=True)
-print(f"Output written to {prefix}peak_annotation.tsv")
+
 
 
 ## annotate_peaks(peakpath,peakconnectionspath,peakannotationpath,
 ##gtfpath,homopolymerpath,libtype="ont",min_reads=50):
 
 
-peaks_with_genes = annotate_peaks(bedpath, 
-    f"{prefix}peak_pairwise_connections.tsv",
-    f"{prefix}peak_annotation.tsv",
+peaks_with_genes = annotate_peaks(peaks_pr, 
+    links_df,
+    annot_df,
     genepath,
     homopol)
+
+peaks_with_genes.to_csv(prefix+"peak_annotation.tsv", index=False, sep="\t", header=True)
+print(f"Output written to {prefix}peak_annotation.tsv")
 
 # create the intervals GTF
 
