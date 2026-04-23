@@ -164,29 +164,18 @@ readTESassignment <- function(endsAlignements, TESCoordinate.base) {
 
 #' Identify full length reads for downstream analysis
 #'
-#' @param annotPath : reference annotaiton path
+#' @param linksDatabase: created with prepare_links_database
 #' @param alignmentsFile : bam file alignments object
 #' @param tss.ntwindow : window for the database assignment for full length at thes TSS
 #' @param tes.ntwindow : window for the database assignment for full length at thes TES
+#' @param reverse_strandedness : strandedness reversal for opposite strand alignmen
 #'
 #' @return
 #' @export
 #'
 #' @examples
-get_sailor_full_lengths <- function(annotPath, alignmentsFile, tss.ntwindow, tes.ntwindow) {
-  annot <- rtracklayer::import.gff(annotPath)
-  linksDatabase <- prepareLinksDatabase(annot, tss.window=tss.ntwindow, tes.window=tes.ntwindow)
-  alignmentsFile <- GenomicRanges::GRanges(alignmentsFile)
-  alignmentsFile$name <- names(alignmentsFile)
-  names(alignmentsFile) <- NULL
-  countsLinks <- countLinks(alignmentsFile, linksDatabase)
-  return(countsLinks)
-  }
-
 
 get_sailor_custom <- function(linksDatabase, alignmentsFile, tss.ntwindow, tes.ntwindow, reverse_strandedness=TRUE) {
-  #annot <- rtracklayer::import.gff(annotPath)
-  #linksDatabase <- prepareLinksDatabase(annot, tss.window=tss.ntwindow, tes.window=tes.ntwindow)
   alignmentsFile <- GenomicRanges::GRanges(alignmentsFile)
   if (reverse_strandedness){
     message("Reversing strand information")

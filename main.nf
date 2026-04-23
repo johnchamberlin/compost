@@ -1,18 +1,21 @@
 #!/usr/bin/env nextflow
 nextflow.enable.dsl=2
 
+
+params.peak_depth = 25
+params.outdir = "results"
+params.strandedness = "default" // if not default we can put "reverse" to induce behaviour
 params.libtype = "10x" // or "argentag", etc. for adjusting peak filtering
 params.trans_spliced = null // adjust peak filtering for trans leader (ctenophore) case
-params.chr = null
-params.peak_depth = 25
-params.bam = null
-params.gtf = null
-params.sj = null // optional: path to STAR or otherwise derived SJ.out.tab format
 
+params.chr = null // default runs all chromosomes
+params.bam = null 
+params.gtf = null
 params.homopol = null
-params.outdir = "results"
-params.refgenome = null
-params.strandedness = "default" // if not default we can put "reverse" to induce behaviour
+
+params.sj = null // optional: path to STAR or otherwise derived SJ.out.tab format
+params.refgenome = null // optional
+
 params.ip_bin = "/users/mirimia/jchamberlin/software/intronProspector/bin/intronProspector"
 params.scaf_keyword = null // e.g. 'scaf' or 'scaffold': contigs whose name contains this string are batched into one job
 
@@ -123,16 +126,26 @@ process cadena { // aka assign reads to TSS-SJs-TES, based on hilgers-lab/laser
 
     script:
     """
-    for c in ${chr}; do
+    if [[ "${chr}" == *" "* ]]; then
         Rscript ${workflow.projectDir}/bin/cadena.R \
             ${bam} \
             ${custom_intervals_gtf} \
             ${sj_file} \
             ${strandedness} \
-            \$c \
-            ${bam_id}_\${c}_cadena_ \
+            ${chr} \
+            ${bam_id}_scaf_cadena_ \
+            ${libtype} \
+            ${chr}
+    else
+        Rscript ${workflow.projectDir}/bin/cadena.R \
+            ${bam} \
+            ${custom_intervals_gtf} \
+            ${sj_file} \
+            ${strandedness} \
+            ${chr} \
+            ${bam_id}_${chr}_cadena_ \
             ${libtype}
-    done
+    fi
     """
 }
 
