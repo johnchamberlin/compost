@@ -14,14 +14,16 @@ from Bio.Seq import Seq
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-from cadena.utils import make_peaks_gtf
-from cadena.utils import annotate_peaks
+from cadena_py.utils import make_peaks_gtf
+from cadena_py.utils import annotate_peaks
 
 bedpath=sys.argv[1] # TSS and PAS peaks bed
 genepath=sys.argv[2] # original gene annotation
 bampath=sys.argv[3] # BAM file of long reads
 prefix=sys.argv[4] # output path prefix
 homopol=sys.argv[5] # homopolymer annotation file path
+trans_spliced=sys.argv[6].lower() == "true" if len(sys.argv) > 6 else False
+libtype=sys.argv[7] if len(sys.argv) > 7 else "10x"
 
 def get_softclip_lengths(read):
     if not read.cigartuples:
@@ -249,14 +251,14 @@ annot_df = clip_df.merge(df_motifs,on="peak_name",how="left")
 
 
 ## annotate_peaks(peakpath,peakconnectionspath,peakannotationpath,
-##gtfpath,homopolymerpath,libtype="ont",min_reads=50):
 
-
-peaks_with_genes = annotate_peaks(peaks_pr, 
+peaks_with_genes = annotate_peaks(peaks_pr,
     links_df,
     annot_df,
     genepath,
-    homopol)
+    homopol,
+    libtype=libtype,
+    trans_spliced=trans_spliced)
 
 peaks_with_genes.to_csv(prefix+"peak_annotation.tsv", index=False, sep="\t", header=True)
 print(f"Output written to {prefix}peak_annotation.tsv")

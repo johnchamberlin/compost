@@ -1,0 +1,41 @@
+Package: cadena
+Title: 
+Version: 0.0.0.9000
+Authors@R: 
+    person("Carlos", "Alfonso-Gonzalez", , "alfonsot@ie-freibirg.mpg.de", role = c("aut", "cre"),
+           comment = c(ORCID = "YOUR-ORCID-ID"))
+    person("John", "Chamberlin", , "johntimcham@gmail.com", role = c("aut"))
+Description: Building/fixing the LASER package from https://github.com/hilgers-lab/LASER
+License: GPL (>= 3)
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.1.2
+Imports: 
+    GenomicRanges, 
+    dplyr,
+    SGSeq,
+    GenomicFeatures,
+    rlang,
+    readr,
+    tidyr,
+    S4Vectors,
+    IRanges,
+    GenomicAlignments,
+    AnnotationDbi,
+    BiocGenerics,
+    plyranges,
+    reshape,
+    tibble,
+    edgeR,
+    rtracklayer,
+    maditr,
+    reshape2,
+    ggplot2,
+    stringr,
+    Rsamtools
+Suggests: 
+    knitr,
+    rmarkdown,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+VignetteBuilder: knitr

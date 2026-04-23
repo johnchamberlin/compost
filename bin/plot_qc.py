@@ -10,7 +10,7 @@ from scipy.optimize import curve_fit
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-from cadena.utils import read_connections
+from cadena_py.utils import read_connections
 
 
 def add_gene_to_peaks(contacts, pann):
