@@ -1,20 +1,30 @@
 #!/usr/bin/env nextflow
 nextflow.enable.dsl=2
 
-params.peak_depth = 50 
-params.bam = null 
+params.libtype = "10x" // or "argentag", etc. for adjusting peak filtering
+params.trans_spliced = null // adjust peak filtering for trans leader (ctenophore) case
+params.chr = null
+params.peak_depth = 25
+params.bam = null
 params.gtf = null
+params.sj = null // optional: path to STAR or otherwise derived SJ.out.tab format
+
 params.homopol = null
 params.outdir = "results"
 params.refgenome = null
+params.strandedness = "default" // if not default we can put "reverse" to induce behaviour
+params.ip_bin = "/users/mirimia/jchamberlin/software/intronProspector/bin/intronProspector"
+params.scaf_keyword = null // e.g. 'scaf' or 'scaffold': contigs whose name contains this string are batched into one job
 
-if( !params.homopol && !params.refgenome ) { 
+
+if( !params.homopol && !params.refgenome ) {
     error "Please provide either --homopol or --refgenome (to find homopolymers)"
 } else if (params.refgenome) {
     params.homopol = "${params.outdir}/homopolymers.bed"
 }
 
-if( !params.bam || !params.gtf ) { error "Please provide --bam and --gtf" }
+if( !params.gtf ) { error "Please provide --gtf" }
+if( !params.bam ) { error "Please provide --bam" }
 
 workflow {
     bam_ch = Channel
@@ -27,19 +37,106 @@ workflow {
             return tuple(bam.baseName, bam, bai)
         }
 
+    if (params.sj) {
+        sj_ch = bam_ch.map { bam_id, bam, bai -> tuple(bam_id, file(params.sj)) }
+    } else {
+        sj_ch = extract_sj(bam_ch, params.gtf ?: [])
+    }
+
     peaks_result = paraclu(bam_ch)
 
     peak_connections(
         peaks_result.join(bam_ch),
-        file(params.gtf)
+        file(params.gtf ?: []),
+        params.libtype
     )
 
     plot_qc(
-        peak_connections.out.bam_id
-            .merge(peak_connections.out.connections)
-            .merge(peak_connections.out.annotations)
+        peak_connections.out.connections
+            .join(peak_connections.out.annotations)
     )
+
+    chrs_ch = get_chromosomes(bam_ch, file(params.gtf))
+        .flatMap { bam_id, chrs ->
+            def all_chrs = chrs.trim().split('\n').toList()
+            if (params.scaf_keyword) {
+                def batched = all_chrs.findAll { it.contains(params.scaf_keyword) }
+                def solo    = all_chrs.findAll { !it.contains(params.scaf_keyword) }
+                def items   = solo.collect { [bam_id, it] }
+                if (batched) items << [bam_id, batched.join(' ')]
+                return items
+            } else {
+                return all_chrs.collect { [bam_id, it] }
+            }
+        }
+
+    if (params.chr) {
+        chrs_ch = chrs_ch.filter { bam_id, chr -> chr == params.chr }
+    }
+
+    cadena_inputs = bam_ch
+        .join(peak_connections.out.gtf)
+        .join(peak_connections.out.connections)
+        .join(sj_ch)
+        .combine(chrs_ch, by: 0)
+
+    cadena(cadena_inputs, params.strandedness, params.libtype)
+
+    if (!params.chr) {
+        merge_cadena(
+            cadena.out.cadena_out
+                .groupTuple()
+        )
+    }
 }
+
+
+process merge_cadena {
+    tag "${bam_id}"
+    publishDir "${params.outdir}/cadena", mode: 'copy'
+
+    input:
+    tuple val(bam_id), path(cadena_files)
+
+    output:
+    tuple val(bam_id), path("${bam_id}_cadena_reads.tsv.gz"),   emit: reads
+    tuple val(bam_id), path("${bam_id}_cadena_pro_tss.ids.tsv"), emit: intervals
+    tuple val(bam_id), path("${bam_id}_cadena_sjs.ids.tsv"),     emit: sjs
+
+    script:
+    """
+    python ${workflow.projectDir}/bin/merge_cadena.py ${bam_id}
+    """
+}
+
+process cadena { // aka assign reads to TSS-SJs-TES, based on hilgers-lab/laser
+    tag "${bam_id}:${chr.split(' ')[0]}${chr.contains(' ') ? '+' + (chr.split(' ').size() - 1) + ' more' : ''}"
+    publishDir "${params.outdir}/cadena", mode: 'copy', enabled: params.chr as boolean
+
+    input:
+    tuple val(bam_id), path(bam), path(bai), path(custom_intervals_gtf), path(connections), path(sj_file), val(chr)
+    val strandedness
+    val libtype
+
+    output:
+    tuple val(bam_id), path("${bam_id}_*_cadena_*"), optional: true, emit: cadena_out
+
+    script:
+    """
+    for c in ${chr}; do
+        Rscript ${workflow.projectDir}/bin/cadena.R \
+            ${bam} \
+            ${custom_intervals_gtf} \
+            ${sj_file} \
+            ${strandedness} \
+            \$c \
+            ${bam_id}_\${c}_cadena_ \
+            ${libtype}
+    done
+    """
+}
+
+
 process plot_qc {
     cache false
     tag "${bam_id}"
@@ -107,12 +204,14 @@ process peak_connections {
     input:
     tuple val(bam_id), path(peaks_bed), path(bam), path(bai)
     path gtf_file
+    val libtype
 
     output:
-    val bam_id,                                     emit: bam_id
-    path "${bam_id}_peak_pairwise_connections.tsv", emit: connections
-    path "${bam_id}_peak_annotation.tsv",           emit: annotations
-    path "${bam_id}_peak_intervals.gtf",            emit: gtf
+    val bam_id,                                                          emit: bam_id
+    tuple val(bam_id), path("${bam_id}_peak_pairwise_connections.tsv"), emit: connections
+    tuple val(bam_id), path("${bam_id}_peak_annotation.tsv"),           emit: annotations
+    tuple val(bam_id), path("${bam_id}_peak_intervals.gtf"),            emit: gtf
+
 
     script:
     """
@@ -121,6 +220,44 @@ process peak_connections {
         ${gtf_file} \
         ${bam} \
         ${bam_id}_ \
-        ${params.homopol}
+        ${params.homopol} \
+        ${params.trans_spliced ?: 'false'} \
+        ${libtype}
+    """
+}
+
+process get_chromosomes {
+    input:
+    tuple val(bam_id), path(bam), path(bai)
+    path gtf
+
+    output:
+    tuple val(bam_id), stdout
+
+    script:
+    """
+    samtools idxstats ${bam} | awk '\$3 > 0 {print \$1}' | grep -v '\\*' | sort > bam_chrs.txt
+    grep -v '^#' ${gtf} | cut -f1 | sort -u > gtf_chrs.txt
+    comm -12 bam_chrs.txt gtf_chrs.txt
+    """
+}
+
+// generate SJs from GTF or BAM if not provided by user
+process extract_sj {
+    tag "${bam_id}"
+    publishDir "${params.outdir}/prep", mode: 'copy'
+    input:
+    tuple val(bam_id), path(bam), path(bai)
+    val gtf_file
+
+    output:
+    tuple val(bam_id), path("${bam_id}_SJ.out.tab")
+
+    script:
+    def gtf_arg = gtf_file ? "--gtf ${gtf_file}" : "--bam ${bam} --genome ${params.refgenome}"
+    """
+    Rscript ${workflow.projectDir}/bin/extract_SJs.R \
+        ${gtf_arg} \
+        --out ${bam_id}_SJ.out.tab
     """
 }

@@ -6,6 +6,7 @@ work/
 # Execution outputs
 results/
 out/
+test/results*
 
 # Environment
 .env

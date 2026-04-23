@@ -1,0 +1,8 @@
+name: compostest
+channels:
+  - conda-forge
+  - bioconda
+defaults:
+  - r-base=4.4.0
+  - htslib
+  - samtools
