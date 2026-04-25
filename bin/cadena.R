@@ -116,6 +116,7 @@ for (current_chr in chr_list) {
     summarise(
       ejc = (function(j) {
         j <- j[!is.na(j)]
+        if (length(j) == 0) return(NA_character_)
         paste(j[order(as.integer(sub("^.", "", j)))], collapse = ",")
       })(unique(J_id)),
       .groups = "drop"
@@ -125,7 +126,7 @@ for (current_chr in chr_list) {
   outfile = paste0(current_outpath, current_chr, "_reads.tsv.gz")
 
   message("writing output to ", outfile)
-  data.table::fwrite(reads_annotated_condensed, outfile, sep="\t", compress = "gzip")
+  data.table::fwrite(reads_annotated_condensed, outfile, sep="\t", compress = "gzip", na = "NA")
 }
 
 

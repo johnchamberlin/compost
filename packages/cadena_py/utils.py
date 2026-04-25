@@ -315,7 +315,7 @@ def add_gene_to_peaks(contacts, pann):
 def make_peaks_gtf(peak_ann, links_path, outpath):
     links = read_connections(links_path, min_reads = 10)
     linkGene = add_gene_to_peaks(links,peak_ann)
-    linkGtf = linkGene[["tss_peak_name","pas_peak_name","tss_gene_id","pas_gene_id"]].copy()
+    linkGtf = linkGene[["tss_peak_name","pas_peak_name","tss_gene_id","pas_gene_id","count"]].copy()
     linkGtf["tss_gene_id"] = linkGtf["tss_gene_id"].combine_first(linkGtf["pas_gene_id"])
     linkGtf["pas_gene_id"] = linkGtf["pas_gene_id"].combine_first(linkGtf["tss_gene_id"])
     linkGtf = linkGtf[linkGtf["tss_gene_id"] == linkGtf["pas_gene_id"]].copy()
@@ -348,9 +348,18 @@ def make_peaks_gtf(peak_ann, links_path, outpath):
 
     # for discordant peak intervals, make a concatenated id
     linkGtf.loc[linkGtf["tss_gene_id"] != linkGtf["pas_gene_id"], "gene_id"] = linkGtf["tss_gene_id"] + "_" + linkGtf["pas_gene_id"]
- 
 
-    linksGtfFmt = linkGtf[["chromosome","start","end","strand","tss_peak_name","pas_peak_name","tss_valid","pas_valid","tss_gene_id"]].copy()
+    def _top2_overlap(group):
+        if len(group) < 2:
+            return True
+        top2 = group.nlargest(2, 'count')
+        a, b = top2.iloc[0], top2.iloc[1]
+        return a['start'] <= b['end'] and b['start'] <= a['end']
+
+    gene_valid = linkGtf.groupby('gene_id').apply(_top2_overlap)
+    linkGtf['gene_valid'] = linkGtf['gene_id'].map(gene_valid)
+
+    linksGtfFmt = linkGtf[["chromosome","start","end","strand","tss_peak_name","pas_peak_name","tss_valid","pas_valid","tss_gene_id","gene_valid"]].copy()
     linksGtfFmt["feature"] = "transcript"
     linksGtfFmt = linksGtfFmt.rename(columns={'tss_gene_id':'gene_id'})
     df = linksGtfFmt.copy()

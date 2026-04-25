@@ -8,7 +8,7 @@ reads_files    = sorted(glob.glob("*_reads.tsv.gz"))
 interval_files = sorted(glob.glob("*_pro_tss.ids.tsv"))
 sj_files       = sorted(glob.glob("*_sjs.ids.tsv"))
 
-reads = pd.concat([pd.read_csv(f, compression="gzip", sep="\t") for f in reads_files], ignore_index=True)
+reads = pd.concat([pd.read_csv(f, compression="gzip", sep="\t", keep_default_na=False, na_values=[""]) for f in reads_files], ignore_index=True)
 reads["pairs_id"] = reads[["gene_id", "promoter_id", "tes_id"]].astype(str).agg(":".join, axis=1)
 reads.to_csv(f"{bam_id}_cadena_reads.tsv.gz", index=False, sep="\t", compression="gzip")
 

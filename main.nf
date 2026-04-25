@@ -88,6 +88,7 @@ workflow {
     if (!params.chr) {
         merge_cadena(
             cadena.out.cadena_out
+                .transpose()
                 .groupTuple()
         )
     }
@@ -125,27 +126,29 @@ process cadena { // aka assign reads to TSS-SJs-TES, based on hilgers-lab/laser
     tuple val(bam_id), path("${bam_id}_*_cadena_*"), optional: true, emit: cadena_out
 
     script:
+    def is_scaffold = params.scaf_keyword && chr.contains(params.scaf_keyword)
+    if (is_scaffold)
     """
-    if [[ "${chr}" == *" "* ]]; then
-        Rscript ${workflow.projectDir}/bin/cadena.R \
-            ${bam} \
-            ${custom_intervals_gtf} \
-            ${sj_file} \
-            ${strandedness} \
-            ${chr} \
-            ${bam_id}_scaf_cadena_ \
-            ${libtype} \
-            ${chr}
+    Rscript ${workflow.projectDir}/bin/cadena.R \
+        ${bam} \
+        ${custom_intervals_gtf} \
+        ${sj_file} \
+        ${strandedness} \
+        "${chr}" \
+        ${bam_id}_scaf_cadena_ \
+        ${libtype} \
+        "${chr}"
+    """
     else
-        Rscript ${workflow.projectDir}/bin/cadena.R \
-            ${bam} \
-            ${custom_intervals_gtf} \
-            ${sj_file} \
-            ${strandedness} \
-            ${chr} \
-            ${bam_id}_${chr}_cadena_ \
-            ${libtype}
-    fi
+    """
+    Rscript ${workflow.projectDir}/bin/cadena.R \
+        ${bam} \
+        ${custom_intervals_gtf} \
+        ${sj_file} \
+        ${strandedness} \
+        ${chr} \
+        ${bam_id}_${chr}_cadena_ \
+        ${libtype}
     """
 }
 
