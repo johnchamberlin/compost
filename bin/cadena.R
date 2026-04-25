@@ -126,7 +126,7 @@ for (current_chr in chr_list) {
   outfile = paste0(current_outpath, current_chr, "_reads.tsv.gz")
 
   message("writing output to ", outfile)
-  data.table::fwrite(reads_annotated_condensed, outfile, sep="\t", compress = "gzip", na = "NA")
+  data.table::fwrite(reads_annotated_condensed, outfile, sep="\t", compress = "gzip", na="NA")
 }
 
 

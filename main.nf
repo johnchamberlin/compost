@@ -126,8 +126,6 @@ process cadena { // aka assign reads to TSS-SJs-TES, based on hilgers-lab/laser
     tuple val(bam_id), path("${bam_id}_*_cadena_*"), optional: true, emit: cadena_out
 
     script:
-    def is_scaffold = params.scaf_keyword && chr.contains(params.scaf_keyword)
-    if (is_scaffold)
     """
     Rscript ${workflow.projectDir}/bin/cadena.R \
         ${bam} \
@@ -151,7 +149,6 @@ process cadena { // aka assign reads to TSS-SJs-TES, based on hilgers-lab/laser
         ${libtype}
     """
 }
-
 
 process plot_qc {
     cache false
